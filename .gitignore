@@ -1,2 +1,6 @@
 #Virtual environment
 venv/
+
+#ignoring input and output files
+downloads/
+laila_core/output/

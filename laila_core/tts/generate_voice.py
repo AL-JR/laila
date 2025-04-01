@@ -1,108 +1,85 @@
-# from TTS.api import TTS
-# import os
-
-# def generate_speech(text, output_path="output/voice.wav", language="es"):
-#     print("[*] Generating voice audio...")
-
-#     # Load a multilingual model
-#     tts = TTS(model_name="tts_models/multilingual/multi-dataset/your_tts", progress_bar=False, gpu=False)
-
-#     # Ensure output dir exists
-#     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
-#     # Generate audio
-#     tts.tts_to_file(text=text, file_path=output_path)
-    
-#     print(f"[✓] Voice audio saved to {output_path}")
-#     return output_path
-# import os
-# from TTS.api import TTS
-
-# def generate_speech(text, output_path="output/voice.wav", language="es", speaker_wav_path=None):
-#     print("[*] Generating voice audio...")
-
-#     # Load multilingual voice cloning model
-#     tts = TTS(model_name="tts_models/multilingual/multi-dataset/your_tts", progress_bar=False, gpu=False)
-
-#     # Ensure output directory exists
-#     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
-#     # Generate audio with voice cloning
-#     tts.tts_to_file(
-#         text=text,
-#         file_path=output_path,
-#         speaker_wav=speaker_wav_path,
-#         language=language
-#     )
-
-#     print(f"[✓] Voice audio saved to {output_path}")
-#     return output_path
+import os
+import random
+import subprocess
+import nltk
+from nltk.tokenize import sent_tokenize
 from torch.serialization import add_safe_globals
 from TTS.tts.configs.xtts_config import XttsConfig
 from TTS.tts.models.xtts import XttsAudioConfig, XttsArgs
 from TTS.config.shared_configs import BaseDatasetConfig
 from TTS.api import TTS
-import os
-import torch
-import random
+
+nltk.download('punkt')
 
 add_safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs])
-import re
 
-def split_into_sentences(text, max_chars=250):
-    sentences = re.split(r'(?<=[.?!])\s+', text)
-    chunks = []
-    current_chunk = ""
-
-    for sentence in sentences:
-        if len(current_chunk) + len(sentence) <= max_chars:
-            current_chunk += " " + sentence
-        else:
-            chunks.append(current_chunk.strip())
-            current_chunk = sentence
-    if current_chunk:
-        chunks.append(current_chunk.strip())
-    return chunks
-
-def generate_speech(text, output_path="output/voice.wav", speaker_id=None, speaker_wav_path=None, language="es"):
+def generate_speech(text, output_path="output/voice.wav", speaker_id="random", speaker_wav_path=None, language="es"):
     print("[*] Generating voice audio...")
-
-    from torch.serialization import add_safe_globals
-    from TTS.tts.configs.xtts_config import XttsConfig
-    from TTS.tts.models.xtts import XttsAudioConfig, XttsArgs
-    from TTS.config.shared_configs import BaseDatasetConfig
-    import torch
-    add_safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs])
-
-    from TTS.api import TTS
-    import os
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     tts = TTS(model_name="tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=False, gpu=False)
 
+    # Attempt to retrieve available speakers from the speaker manager
     if speaker_id == "random":
-        import random
-        speaker_id = random.choice(list(tts.tts_model.speaker_manager.speakers.keys()))
-        print(f"[✔] Using random speaker: {speaker_id}")
-    else:
+        if tts.synthesizer.speaker_manager is not None and tts.synthesizer.speaker_manager.speakers:
+            available_speakers = [s.strip() for s in tts.synthesizer.speaker_manager.speakers.keys()]
+            if available_speakers:
+                speaker_id = random.choice(available_speakers)
+                print(f"[✔] Randomly selected speaker: {speaker_id}")
+            else:
+                raise ValueError("No available speakers found for this multi-speaker model.")
+        else:
+            raise ValueError("Speaker manager not available. Please supply a valid speaker ID.")
+    elif speaker_id:
         speaker_id = speaker_id.strip()
+        if tts.synthesizer.speaker_manager is not None and tts.synthesizer.speaker_manager.speakers:
+            available_speakers = [s.strip() for s in tts.synthesizer.speaker_manager.speakers.keys()]
+            if speaker_id not in available_speakers:
+                raise ValueError(f"[✘] Speaker ID '{speaker_id}' not in available speakers: {available_speakers}")
 
-    # Split text into smaller chunks
-    chunks = split_into_sentences(text, max_chars=250)
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    combined_paths = []
+    # Split the text into smaller chunks using NLTK (for Spanish)
+    chunks = sent_tokenize(text, language='spanish')
+    print(f"[→] Splitting text into {len(chunks)} chunks...")
+
+    chunk_paths = []
     for i, chunk in enumerate(chunks):
-        print(f"[•] Generating part {i + 1}/{len(chunks)}...")
-        part_path = output_path.replace(".wav", f"_part{i}.wav")
+        out_path = output_path.replace(".wav", f"_{i}.wav")
+        print(f"[•] Synthesizing chunk {i+1}/{len(chunks)}: {chunk[:30]}...")
         tts.tts_to_file(
             text=chunk,
-            file_path=part_path,
+            file_path=out_path,
             speaker=speaker_id,
             speaker_wav=speaker_wav_path,
             language=language
         )
-        combined_paths.append(part_path)
+        chunk_paths.append(out_path)
 
-    print(f"[✓] Generated {len(combined_paths)} audio chunks.")
-    return combined_paths
+    # Merge the chunk files using ffmpeg
+    concat_file = os.path.join(os.path.dirname(output_path), "concat_list.txt")
+    with open(concat_file, "w", encoding="utf-8") as f:
+        for path in chunk_paths:
+            f.write(f"file '{os.path.abspath(path)}'\n")
+    
+    final_output = output_path.replace(".wav", "_merged.wav")
+    subprocess.run([
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", concat_file,
+        "-c", "copy", final_output
+    ], check=True)
+    
+    # Cleanup temporary files
+    for path in chunk_paths:
+        os.remove(path)
+    os.remove(concat_file)
+    
+    print(f"[✓] Final merged voice audio saved to {final_output}")
+    return final_output
 
+# Example usage:
+if __name__ == "__main__":
+    sample_text = ("qué es un problema de la diabetes, qué es un problema de la diabetes, "
+                   "qué es un problema de la salud, cómo un problema de la calidad de la calidad "
+                   "de la calidad de la calidad de la salud")
+    final_audio = generate_speech(sample_text, speaker_id="random", language="es")
+    print("Final audio file:", final_audio)

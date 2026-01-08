@@ -1,0 +1,19 @@
+# Laila Project Requirements
+
+# Audio/Video Processing
+openai-whisper
+ffmpeg-python
+yt-dlp
+
+# Translation
+transformers
+sentencepiece
+torch
+
+# Text-to-Speech
+TTS>=0.22.0
+nltk
+
+# General utilities
+numpy
+scipy

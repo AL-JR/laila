@@ -9,77 +9,113 @@ from TTS.tts.models.xtts import XttsAudioConfig, XttsArgs
 from TTS.config.shared_configs import BaseDatasetConfig
 from TTS.api import TTS
 
-nltk.download('punkt')
+# Download NLTK data
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
 
 add_safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs])
 
-def generate_speech(text, output_path="output/voice.wav", speaker_id="random", speaker_wav_path=None, language="es"):
+def generate_speech(text, output_path="output/voice.wav", speaker_id=None, speaker_wav_path=None, language="es"):
+    """
+    Generate speech from text using XTTS v2 model with optional voice cloning.
+    
+    Args:
+        text (str): Text to convert to speech
+        output_path (str): Path for output audio file
+        speaker_id (str): Speaker ID for multi-speaker model (optional)
+        speaker_wav_path (str): Path to speaker sample for voice cloning (optional)
+        language (str): Language code (default: "es" for Spanish)
+        
+    Returns:
+        str: Path to the generated audio file
+    """
     print("[*] Generating voice audio...")
 
     tts = TTS(model_name="tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=False, gpu=False)
 
-    # Attempt to retrieve available speakers from the speaker manager
-    if speaker_id == "random":
-        if tts.synthesizer.speaker_manager is not None and tts.synthesizer.speaker_manager.speakers:
-            available_speakers = [s.strip() for s in tts.synthesizer.speaker_manager.speakers.keys()]
-            if available_speakers:
-                speaker_id = random.choice(available_speakers)
-                print(f"[✔] Randomly selected speaker: {speaker_id}")
-            else:
-                raise ValueError("No available speakers found for this multi-speaker model.")
-        else:
-            raise ValueError("Speaker manager not available. Please supply a valid speaker ID.")
-    elif speaker_id:
-        speaker_id = speaker_id.strip()
-        if tts.synthesizer.speaker_manager is not None and tts.synthesizer.speaker_manager.speakers:
-            available_speakers = [s.strip() for s in tts.synthesizer.speaker_manager.speakers.keys()]
-            if speaker_id not in available_speakers:
-                raise ValueError(f"[✘] Speaker ID '{speaker_id}' not in available speakers: {available_speakers}")
+    os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else "output", exist_ok=True)
 
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
-    # Split the text into smaller chunks using NLTK (for Spanish)
-    chunks = sent_tokenize(text, language='spanish')
+    # Split the text into smaller chunks using NLTK
+    lang_map = {'es': 'spanish', 'en': 'english', 'fr': 'french', 'de': 'german'}
+    nltk_lang = lang_map.get(language, 'spanish')
+    
+    try:
+        chunks = sent_tokenize(text, language=nltk_lang)
+    except:
+        # Fallback to simple splitting if language not available
+        chunks = [s.strip() + '.' for s in text.split('.') if s.strip()]
+    
     print(f"[→] Splitting text into {len(chunks)} chunks...")
 
     chunk_paths = []
     for i, chunk in enumerate(chunks):
-        out_path = output_path.replace(".wav", f"_{i}.wav")
-        print(f"[•] Synthesizing chunk {i+1}/{len(chunks)}: {chunk[:30]}...")
-        tts.tts_to_file(
-            text=chunk,
-            file_path=out_path,
-            speaker=speaker_id,
-            speaker_wav=speaker_wav_path,
-            language=language
-        )
-        chunk_paths.append(out_path)
+        if not chunk.strip():
+            continue
+            
+        out_path = output_path.replace(".wav", f"_chunk_{i}.wav")
+        print(f"[•] Synthesizing chunk {i+1}/{len(chunks)}: {chunk[:50]}...")
+        
+        try:
+            if speaker_wav_path:
+                # Voice cloning mode
+                tts.tts_to_file(
+                    text=chunk,
+                    file_path=out_path,
+                    speaker_wav=speaker_wav_path,
+                    language=language
+                )
+            else:
+                # Default speaker mode (XTTS v2 doesn't use speaker_id, it uses speaker_wav)
+                tts.tts_to_file(
+                    text=chunk,
+                    file_path=out_path,
+                    language=language
+                )
+            chunk_paths.append(out_path)
+        except Exception as e:
+            print(f"[✗] Error synthesizing chunk {i+1}: {e}")
+            continue
+
+    if not chunk_paths:
+        raise ValueError("No audio chunks were successfully generated!")
+
+    # If only one chunk, just rename it
+    if len(chunk_paths) == 1:
+        final_output = output_path.replace(".wav", "_final.wav")
+        os.rename(chunk_paths[0], final_output)
+        print(f"[✓] Final voice audio saved to {final_output}")
+        return final_output
 
     # Merge the chunk files using ffmpeg
-    concat_file = os.path.join(os.path.dirname(output_path), "concat_list.txt")
+    concat_file = os.path.join(os.path.dirname(output_path) or "output", "concat_list.txt")
     with open(concat_file, "w", encoding="utf-8") as f:
         for path in chunk_paths:
             f.write(f"file '{os.path.abspath(path)}'\n")
     
-    final_output = output_path.replace(".wav", "_merged.wav")
-    subprocess.run([
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-        "-i", concat_file,
-        "-c", "copy", final_output
-    ], check=True)
+    final_output = output_path.replace(".wav", "_final.wav")
+    
+    try:
+        subprocess.run([
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+            "-i", concat_file,
+            "-c", "copy", final_output
+        ], check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        print(f"[✗] FFmpeg error: {e}")
+        # Fallback: use the first chunk if merging fails
+        print("[!] Falling back to first chunk only...")
+        final_output = output_path.replace(".wav", "_final.wav")
+        os.rename(chunk_paths[0], final_output)
+        chunk_paths = chunk_paths[1:]  # Keep rest for cleanup
     
     # Cleanup temporary files
     for path in chunk_paths:
-        os.remove(path)
-    os.remove(concat_file)
+        if os.path.exists(path):
+            os.remove(path)
+    if os.path.exists(concat_file):
+        os.remove(concat_file)
     
-    print(f"[✓] Final merged voice audio saved to {final_output}")
+    print(f"[✓] Final voice audio saved to {final_output}")
     return final_output
-
-# Example usage:
-if __name__ == "__main__":
-    sample_text = ("qué es un problema de la diabetes, qué es un problema de la diabetes, "
-                   "qué es un problema de la salud, cómo un problema de la calidad de la calidad "
-                   "de la calidad de la calidad de la salud")
-    final_audio = generate_speech(sample_text, speaker_id="random", language="es")
-    print("Final audio file:", final_audio)

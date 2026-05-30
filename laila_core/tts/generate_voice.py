@@ -1,31 +1,43 @@
 import os
 import subprocess
 import ffmpeg
-from f5_tts.api import F5TTS
+from torch.serialization import add_safe_globals
+from TTS.tts.configs.xtts_config import XttsConfig
+from TTS.tts.models.xtts import XttsAudioConfig, XttsArgs
+from TTS.config.shared_configs import BaseDatasetConfig
+
+add_safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs])
 
 _tts_instance = None
 
 
 def _get_tts():
-    """Lazy-load and cache the F5-TTS instance."""
+    """Lazy-load and cache the XTTS v2 instance."""
     global _tts_instance
     if _tts_instance is None:
-        print("[*] Loading F5-TTS model (first run may download ~1GB)...")
-        _tts_instance = F5TTS()
-        print("[✓] F5-TTS model loaded.")
+        print("[*] Loading XTTS v2 model...")
+        os.environ["COQUI_TOS_AGREED"] = "1"
+        from TTS.api import TTS
+        _tts_instance = TTS(
+            model_name="tts_models/multilingual/multi-dataset/xtts_v2",
+            progress_bar=False,
+            gpu=False,
+        )
+        print("[✓] XTTS v2 loaded.")
     return _tts_instance
 
 
 def generate_segment_audio(text, target_duration, output_path, speaker_wav, language="es"):
     """
-    Generate TTS for a single segment and time-stretch it to fit target_duration.
+    Generate TTS for a single segment using XTTS v2 cross-lingual voice cloning,
+    then time-stretch to fit target_duration.
 
     Args:
         text (str): Text to synthesize
         target_duration (float): Original segment duration in seconds
         output_path (str): Path for the final (stretched) audio file
         speaker_wav (str): Path to speaker reference audio for voice cloning
-        language (str): Language code (unused by F5-TTS, kept for interface compatibility)
+        language (str): Target language code (e.g. "es", "en", "fr")
 
     Returns:
         str: Path to the time-stretched audio file
@@ -45,15 +57,11 @@ def generate_segment_audio(text, target_duration, output_path, speaker_wav, lang
     raw_path = output_path.replace(".wav", "_raw.wav")
 
     tts = _get_tts()
-
-    # Auto-transcribe the reference clip so F5-TTS can condition on it
-    ref_text = tts.transcribe(speaker_wav)
-
-    wav, sr, _ = tts.infer(
-        ref_file=speaker_wav,
-        ref_text=ref_text,
-        gen_text=text,
-        file_wave=raw_path,
+    tts.tts_to_file(
+        text=text,
+        file_path=raw_path,
+        speaker_wav=speaker_wav,
+        language=language,
     )
 
     # Probe the generated duration

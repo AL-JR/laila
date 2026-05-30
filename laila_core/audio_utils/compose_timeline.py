@@ -33,8 +33,8 @@ def compose_audio_timeline(segments, total_duration, output_path="output/compose
     # Inputs 1..N: segment audio files
     cmd = ["ffmpeg", "-y"]
 
-    # Silence base
-    cmd += ["-f", "lavfi", "-i", f"anullsrc=r=22050:cl=mono", "-t", str(total_duration)]
+    # Silence base — -t must come BEFORE -i to limit the lavfi source duration
+    cmd += ["-f", "lavfi", "-t", str(total_duration), "-i", "anullsrc=r=24000:cl=mono"]
 
     # Segment inputs
     for seg in valid:
@@ -61,7 +61,7 @@ def compose_audio_timeline(segments, total_duration, output_path="output/compose
     cmd += ["-filter_complex", filter_complex, "-map", "[out]", output_path]
 
     try:
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, capture_output=True)
     except subprocess.CalledProcessError as e:
         print(f"[✗] Timeline composition failed: {e}")
         raise

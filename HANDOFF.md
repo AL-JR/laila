@@ -77,28 +77,27 @@ Need ~4GB free on first run. ~2GB free disk on C: is sufficient once cached.
 
 ---
 
-## Where We Left Off
-The pipeline ran successfully through Steps 1–3 (audio extract, Demucs, Whisper) on
-a 14-second test video (`test.mp4`). It produced 4 clean timed segments:
+## Where We Left Off (updated 2026-05-30)
+**TTS backend switched from Coqui XTTS v2 → F5-TTS (pure Python, no C++ build tools required).**
 
+Environment situation:
+- `.venv` at project root using `uv` with Python 3.11 ✓
+- `f5-tts` installed and verified working ✓
+- `generate_voice.py` rewritten to use F5-TTS API ✓
+
+To run:
 ```
-[0.0s → 3.6s]  and hope that they grow that they grow and they get strong,
-[4.0s → 7.3s]  because that's where you produce serotonin, your gut
-[8.9s → 12.1s] transforms tryptophan into serotonin and then it gets
-[12.1s → 14.0s] taken by the vagus nerve and by the blood.
+cd C:\Users\alber\Documents\Portfolio\laila
+.venv\Scripts\activate
+PYTHONUTF8=1 python laila_core/app.py
 ```
 
-It then **failed at Step 5 (translation)** because:
-1. The MarianMT model download was blocked by insufficient disk space (~197MB free, needed ~312MB)
-2. The model on HuggingFace only has TensorFlow weights — `from_tf=True` fallback has been added to the code
-
-**Fix applied in code already** — just needs disk space cleared and re-run.
+Steps 1–4 were previously confirmed working. Steps 5–9 are untested with the new TTS backend.
 
 ---
 
 ## Known Issues / Next Steps
-1. **Run to completion** — clear disk space and do a full end-to-end run to verify
-   Steps 5–9 (translation → TTS → timeline → merge) work correctly.
+1. **Full pipeline run in progress** — verifying Steps 5–9 (translation → TTS → timeline → merge).
 
 2. **Voice cloning quality** — XTTS v2 works best with 15–30s of clean speech.
    The sample is now auto-selected from the longest Whisper segment on the clean
@@ -133,7 +132,7 @@ demucs
 transformers
 sentencepiece
 torch
-TTS>=0.22.0
+f5-tts
 nltk
 numpy
 scipy

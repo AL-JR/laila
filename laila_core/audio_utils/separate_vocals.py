@@ -20,10 +20,13 @@ def separate_vocals(audio_path, output_dir="output/demucs"):
 
     os.makedirs(output_dir, exist_ok=True)
 
+    # Use run_demucs.py wrapper to patch torchaudio.save → soundfile,
+    # avoiding the torchcodec shared-DLL requirement on Windows.
+    _wrapper = os.path.join(os.path.dirname(os.path.dirname(__file__)), "run_demucs.py")
     try:
         subprocess.run(
             [
-                sys.executable, "-m", "demucs",
+                sys.executable, _wrapper,
                 "--two-stems", "vocals",   # only split into vocals + no_vocals
                 "-n", "htdemucs",          # best quality model
                 "-o", output_dir,

@@ -19,7 +19,7 @@ from audio_utils import seconds_to_hms
 
 # ── Configuration ────────────────────────────────────────────────────────────
 YOUTUBE_URL  = "https://youtu.be/NL67yyu2N4U?si=55BchSJ5ccAOv4OY"
-LOCAL_VIDEO  = None   # Set to a local file path to skip YouTube download
+LOCAL_VIDEO  = "test.mp4"   # Set to a local file path to skip YouTube download
 
 SOURCE_LANG  = "en"
 TARGET_LANG  = "es"

@@ -60,7 +60,11 @@ def translate_segments(segments, src_lang="en", tgt_lang="es"):
 
     try:
         tokenizer = MarianTokenizer.from_pretrained(model_name)
-        model = MarianMTModel.from_pretrained(model_name)
+        try:
+            model = MarianMTModel.from_pretrained(model_name)
+        except OSError:
+            print("[!] PyTorch weights not found — loading from TensorFlow weights...")
+            model = MarianMTModel.from_pretrained(model_name, from_tf=True)
     except Exception as e:
         print(f"[✗] Error loading translation model: {e}")
         raise
@@ -98,7 +102,11 @@ def translate_text(text, src_lang="en", tgt_lang="es"):
 
     try:
         tokenizer = MarianTokenizer.from_pretrained(model_name)
-        model = MarianMTModel.from_pretrained(model_name)
+        try:
+            model = MarianMTModel.from_pretrained(model_name)
+        except OSError:
+            print("[!] PyTorch weights not found — loading from TensorFlow weights...")
+            model = MarianMTModel.from_pretrained(model_name, from_tf=True)
     except Exception as e:
         print(f"[✗] Error loading translation model: {e}")
         raise

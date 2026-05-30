@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 import shutil
 
@@ -22,7 +23,7 @@ def separate_vocals(audio_path, output_dir="output/demucs"):
     try:
         subprocess.run(
             [
-                "python", "-m", "demucs",
+                sys.executable, "-m", "demucs",
                 "--two-stems", "vocals",   # only split into vocals + no_vocals
                 "-n", "htdemucs",          # best quality model
                 "-o", output_dir,

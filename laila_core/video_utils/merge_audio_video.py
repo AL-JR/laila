@@ -33,7 +33,7 @@ def merge_audio_video(video_path, audio_path, output_path="output/final_video.mp
             acodec='aac',   # Encode audio as AAC
             audio_bitrate='192k',
             strict='experimental'
-        ).overwrite_output().run(capture_output=True)
+        ).overwrite_output().run()
         
         print(f"[✓] Final dubbed video saved to: {output_path}")
         return output_path
@@ -70,7 +70,7 @@ def adjust_audio_speed(audio_path, target_duration, output_path="output/adjusted
         if 0.5 <= speed_factor <= 2.0:
             ffmpeg.input(audio_path).filter('atempo', speed_factor).output(
                 output_path
-            ).overwrite_output().run(capture_output=True)
+            ).overwrite_output().run()
         else:
             # Chain multiple atempo filters for extreme speed changes
             print(f"[!] Large speed adjustment needed: {speed_factor}x")
@@ -82,7 +82,7 @@ def adjust_audio_speed(audio_path, target_duration, output_path="output/adjusted
                     chain = chain.filter('atempo', 2.0)
                     remaining /= 2.0
                 chain = chain.filter('atempo', remaining)
-                chain.output(output_path).overwrite_output().run(capture_output=True)
+                chain.output(output_path).overwrite_output().run()
             else:
                 # Slow down: chain multiple atempo=0.5
                 chain = ffmpeg.input(audio_path)
@@ -91,7 +91,7 @@ def adjust_audio_speed(audio_path, target_duration, output_path="output/adjusted
                     chain = chain.filter('atempo', 0.5)
                     remaining /= 0.5
                 chain = chain.filter('atempo', remaining)
-                chain.output(output_path).overwrite_output().run(capture_output=True)
+                chain.output(output_path).overwrite_output().run()
         
         print(f"[✓] Audio speed adjusted (factor: {speed_factor:.2f}x)")
         return output_path

@@ -40,16 +40,19 @@ def separate_vocals(audio_path, output_dir="output/demucs"):
 
     # Demucs writes to: output_dir/htdemucs/<stem_name>/<filename>/vocals.wav
     base_name = os.path.splitext(os.path.basename(audio_path))[0]
-    vocals_path = os.path.join(output_dir, "htdemucs", base_name, "vocals.wav")
+    vocals_src = os.path.join(output_dir, "htdemucs", base_name, "vocals.wav")
+    no_vocals_src = os.path.join(output_dir, "htdemucs", base_name, "no_vocals.wav")
 
-    if not os.path.exists(vocals_path):
+    if not os.path.exists(vocals_src):
         raise FileNotFoundError(
-            f"Demucs did not produce expected output at: {vocals_path}"
+            f"Demucs did not produce expected output at: {vocals_src}"
         )
 
-    # Copy to a flat, predictable location
-    dest = os.path.join(output_dir, "vocals.wav")
-    shutil.copy2(vocals_path, dest)
+    # Copy both stems to flat, predictable locations
+    vocals_dest = os.path.join(output_dir, "vocals.wav")
+    no_vocals_dest = os.path.join(output_dir, "no_vocals.wav")
+    shutil.copy2(vocals_src, vocals_dest)
+    shutil.copy2(no_vocals_src, no_vocals_dest)
 
-    print(f"[✓] Vocals isolated: {dest}")
-    return dest
+    print(f"[✓] Vocals isolated: {vocals_dest}")
+    return vocals_dest, no_vocals_dest

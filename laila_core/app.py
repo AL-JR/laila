@@ -9,7 +9,7 @@ import sys
 import ffmpeg
 from video_utils.extract_audio import extract_audio
 from audio_utils.separate_vocals import separate_vocals
-from audio_utils.compose_timeline import compose_audio_timeline
+from audio_utils.compose_timeline import compose_audio_timeline, mix_with_background
 from transcription.whisper_transcribe import transcribe_audio
 from translation.translate_text import translate_segments
 from tts.generate_voice import generate_segment_audio
@@ -19,8 +19,8 @@ from video_utils.merge_audio_video import merge_audio_video
 from audio_utils import seconds_to_hms
 
 # ── Configuration ────────────────────────────────────────────────────────────
-YOUTUBE_URL  = "https://youtu.be/NL67yyu2N4U?si=55BchSJ5ccAOv4OY"
-LOCAL_VIDEO  = "test.mp4"   # Set to a local file path to skip YouTube download
+YOUTUBE_URL  = "https://youtube.com/shorts/otNcf6j9Feo?si=lZJOjMlO_vemxZ1p"
+LOCAL_VIDEO  = None   # Set to a local file path to skip YouTube download
 
 SOURCE_LANG  = "en"
 TARGET_LANG  = "es"
@@ -77,8 +77,9 @@ def main():
         audio_path = extract_audio(video_file)
 
         print("\n[STEP 2b] Isolating vocals (Demucs)...")
-        vocals_path = separate_vocals(audio_path)
+        vocals_path, no_vocals_path = separate_vocals(audio_path)
         print(f"[✓] Vocals: {vocals_path}")
+        print(f"[✓] Background: {no_vocals_path}")
 
         # ── Step 3: Transcribe ───────────────────────────────────────────────
         print("\n[STEP 3] Transcribing...")
@@ -160,11 +161,20 @@ def main():
         )
         print(f"[✓] Composed: {composed_audio}")
 
+        # ── Step 8b: Mix dubbed voice with original background ───────────────
+        print("\n[STEP 8b] Mixing dubbed voice with background audio...")
+        final_audio = mix_with_background(
+            composed_audio,
+            no_vocals_path,
+            output_path="output/final_audio.wav",
+        )
+        print(f"[✓] Mixed: {final_audio}")
+
         # ── Step 9: Merge into final video ───────────────────────────────────
         print("\n[STEP 9] Merging audio into video...")
         final_video = merge_audio_video(
             video_file,
-            composed_audio,
+            final_audio,
             output_path="output/final_dubbed_video.mp4",
         )
         print(f"[✓] Final video: {final_video}")

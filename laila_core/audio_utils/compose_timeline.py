@@ -68,3 +68,36 @@ def compose_audio_timeline(segments, total_duration, output_path="output/compose
 
     print(f"[✓] Audio timeline composed: {output_path}")
     return output_path
+
+
+def mix_with_background(dubbed_audio, background_audio, output_path="output/final_audio.wav"):
+    """
+    Mix the dubbed voice timeline with the original background (no_vocals) track.
+
+    Args:
+        dubbed_audio (str): Path to the composed TTS audio
+        background_audio (str): Path to the no_vocals background track from Demucs
+        output_path (str): Path for the mixed output WAV
+
+    Returns:
+        str: Path to the mixed audio file
+    """
+    print("[*] Mixing dubbed voice with background audio...")
+    os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else "output", exist_ok=True)
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", dubbed_audio,
+        "-i", background_audio,
+        "-filter_complex", "amix=inputs=2:duration=first:normalize=0",
+        output_path,
+    ]
+
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        print(f"[✗] Background mix failed: {e}")
+        raise
+
+    print(f"[✓] Mixed audio: {output_path}")
+    return output_path

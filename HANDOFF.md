@@ -78,12 +78,13 @@ Need ~4GB free on first run. ~2GB free disk on C: is sufficient once cached.
 ---
 
 ## Where We Left Off (updated 2026-05-30)
-**TTS backend switched from Coqui XTTS v2 → F5-TTS (pure Python, no C++ build tools required).**
+**Full pipeline working end-to-end with XTTS v2 cross-lingual voice cloning.**
 
 Environment situation:
 - `.venv` at project root using `uv` with Python 3.11 ✓
-- `f5-tts` installed and verified working ✓
-- `generate_voice.py` rewritten to use F5-TTS API ✓
+- XTTS v2 (Coqui TTS 0.22.0) installed via MeloTTS dependency ✓
+- `xtts.py` patched: `strict=False` in `load_checkpoint` to handle checkpoint/version mismatch ✓
+- All 9 pipeline steps confirmed working ✓
 
 To run:
 ```
@@ -92,7 +93,7 @@ cd C:\Users\alber\Documents\Portfolio\laila
 PYTHONUTF8=1 python laila_core/app.py
 ```
 
-Steps 1–4 were previously confirmed working. Steps 5–9 are untested with the new TTS backend.
+Output: `laila_core/output/final_dubbed_video.mp4`
 
 ---
 

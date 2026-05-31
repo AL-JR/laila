@@ -6,6 +6,10 @@ Segment-based pipeline with timestamp sync, voice cloning, and multi-speaker sup
 import os
 import sys
 
+# Load .env from project root if present (keeps secrets out of source)
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+
 import ffmpeg
 from video_utils.extract_audio import extract_audio
 from audio_utils.separate_vocals import separate_vocals
@@ -19,7 +23,7 @@ from video_utils.merge_audio_video import merge_audio_video
 from audio_utils import seconds_to_hms
 
 # ── Configuration ────────────────────────────────────────────────────────────
-YOUTUBE_URL  = "https://youtube.com/shorts/otNcf6j9Feo?si=lZJOjMlO_vemxZ1p"
+YOUTUBE_URL  = "https://youtu.be/Dd7FixvoKBw?si=wP4U0alr13Of700Y"
 LOCAL_VIDEO  = None   # Set to a local file path to skip YouTube download
 
 SOURCE_LANG  = "en"
@@ -28,7 +32,7 @@ TARGET_LANG  = "es"
 # Set True to detect and clone each speaker separately.
 # Requires: pip install pyannote.audio  +  HF_TOKEN env var
 # Accept model terms at: https://huggingface.co/pyannote/speaker-diarization-3.1
-MULTI_SPEAKER = False
+MULTI_SPEAKER = True
 
 # Optionally hint how many speakers are in the video (improves diarization accuracy)
 MIN_SPEAKERS = None   # e.g. 2
@@ -36,17 +40,60 @@ MAX_SPEAKERS = None   # e.g. 4
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _pick_single_speaker_sample(segments, vocals_path, min_duration=10.0):
-    """Pick the longest segment as the cloning sample for single-speaker mode."""
-    best = max(segments, key=lambda s: s["end"] - s["start"], default=None)
-    if best and (best["end"] - best["start"]) >= min_duration:
-        start_str = seconds_to_hms(best["start"])
-        dur = int(best["end"] - best["start"])
-        print(f"[*] Best sample: {start_str} ({dur}s) — \"{best['text'][:50]}\"")
-        return extract_speaker_sample(vocals_path, start_time=start_str, duration=dur)
-    else:
-        print("[*] No long segment found — using fixed offset 00:00:03 (15s)")
+def _pick_single_speaker_sample(segments, vocals_path, target_duration=30.0, min_seg_duration=2.0):
+    """
+    Build a voice reference by concatenating the top longest segments up to
+    target_duration seconds total. Longer, cleaner references improve XTTS quality.
+    """
+    import subprocess as _sp
+
+    # Sort by duration descending, skip very short segments
+    ranked = sorted(
+        [s for s in segments if (s["end"] - s["start"]) >= min_seg_duration],
+        key=lambda s: s["end"] - s["start"],
+        reverse=True,
+    )
+
+    if not ranked:
+        print("[*] No usable segments found — using fixed offset 00:00:03 (15s)")
         return extract_speaker_sample(vocals_path, start_time="00:00:03", duration=15)
+
+    # Accumulate top segments up to target_duration
+    clips, total = [], 0.0
+    for seg in ranked:
+        dur = min(seg["end"] - seg["start"], target_duration - total)
+        if dur <= 0:
+            break
+        clip_path = f"output/samples/_ref_{len(clips)}.wav"
+        extract_speaker_sample(vocals_path, start_time=seconds_to_hms(seg["start"]),
+                               duration=int(dur), output_path=clip_path)
+        clips.append(clip_path)
+        total += dur
+        if total >= target_duration:
+            break
+
+    if len(clips) == 1:
+        os.replace(clips[0], "output/samples/original_speaker.wav")
+        print(f"[✓] Voice reference: 1 segment ({total:.1f}s)")
+        return "output/samples/original_speaker.wav"
+
+    # Concatenate clips into one reference file
+    ref_path = "output/samples/original_speaker.wav"
+    inputs = []
+    for c in clips:
+        inputs += ["-i", c]
+    _sp.run(
+        ["ffmpeg", "-y"] + inputs +
+        ["-filter_complex", f"concat=n={len(clips)}:v=0:a=1[out]",
+         "-map", "[out]", ref_path],
+        check=True, capture_output=True,
+    )
+    for c in clips:
+        if os.path.exists(c):
+            os.remove(c)
+
+    print(f"[✓] Voice reference: {len(clips)} segments concatenated ({total:.1f}s)")
+    return ref_path
 
 
 def main():
@@ -94,7 +141,7 @@ def main():
         if MULTI_SPEAKER:
             print("\n[STEP 4] Running speaker diarization...")
             from audio_utils.diarize import diarize_audio
-            from audio_utils.align_speakers import assign_speakers
+            from audio_utils.align_speakers import assign_speakers, resolve_overlaps
             from audio_utils.speaker_samples import extract_samples_per_speaker
 
             turns = diarize_audio(
@@ -103,6 +150,7 @@ def main():
                 max_speakers=MAX_SPEAKERS,
             )
             segments = assign_speakers(segments, turns)
+            segments = resolve_overlaps(segments)
 
             unique_speakers = sorted({s["speaker"] for s in segments})
             print(f"[✓] {len(unique_speakers)} speaker(s) identified: {unique_speakers}")

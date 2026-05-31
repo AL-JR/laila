@@ -2,7 +2,8 @@ import os
 import ffmpeg
 
 def extract_speaker_sample(video_path, start_time="00:00:03", duration=5,
-                           output_dir="output/samples", filename="original_speaker.wav"):
+                           output_dir="output/samples", filename="original_speaker.wav",
+                           output_path=None):
     """
     Extract a short clean audio sample from the video for voice cloning.
     Choose a segment where the speaker is talking clearly without background noise.
@@ -13,12 +14,16 @@ def extract_speaker_sample(video_path, start_time="00:00:03", duration=5,
         duration (int): Duration of the audio clip in seconds
         output_dir (str): Directory to save the sample
         filename (str): Output filename (default: original_speaker.wav)
+        output_path (str): Full output path — overrides output_dir + filename if set
 
     Returns:
         str: Path to the extracted speaker sample
     """
-    os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, filename)
+    if output_path is None:
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, filename)
+    else:
+        os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else ".", exist_ok=True)
 
     try:
         (
@@ -26,7 +31,7 @@ def extract_speaker_sample(video_path, start_time="00:00:03", duration=5,
             .input(video_path, ss=start_time, t=duration)
             .output(output_path, format='wav', acodec='pcm_s16le', ar='22050', ac=1)
             .overwrite_output()
-            .run(quiet=False)
+            .run(quiet=True)
         )
         print(f"[✓] Speaker sample saved to: {output_path}")
         return output_path

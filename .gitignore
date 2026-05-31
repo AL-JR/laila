@@ -1,5 +1,9 @@
 #Virtual environment
 venv/
+.venv/
+
+# Environment variables (never commit)
+.env
 
 #ignoring input and output files
 downloads/

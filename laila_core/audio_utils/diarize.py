@@ -39,10 +39,14 @@ def diarize_audio(audio_path, hf_token=None, min_speakers=None, max_speakers=Non
             "Accept the model terms at: https://huggingface.co/pyannote/speaker-diarization-3.1"
         )
 
+    # Log in so huggingface_hub caches the token for all downstream downloads
+    from huggingface_hub import login
+    login(token=token, add_to_git_credential=False)
+
     print("[*] Loading pyannote speaker diarization pipeline...")
     pipeline = Pipeline.from_pretrained(
         "pyannote/speaker-diarization-3.1",
-        use_auth_token=token
+        token=token,
     )
 
     kwargs = {}
@@ -52,7 +56,10 @@ def diarize_audio(audio_path, hf_token=None, min_speakers=None, max_speakers=Non
         kwargs["max_speakers"] = max_speakers
 
     print(f"[*] Running diarization on: {audio_path}")
-    diarization = pipeline(audio_path, **kwargs)
+    result = pipeline(audio_path, **kwargs)
+
+    # Newer pyannote wraps the annotation in a DiarizeOutput object
+    diarization = getattr(result, "speaker_diarization", result)
 
     turns = []
     for turn, _, speaker in diarization.itertracks(yield_label=True):

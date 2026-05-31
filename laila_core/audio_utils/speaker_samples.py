@@ -1,58 +1,87 @@
 import os
+import subprocess
 from audio_utils import seconds_to_hms
 from video_utils.speaker_clip import extract_speaker_sample
 
 
 def extract_samples_per_speaker(segments, vocals_path, output_dir="output/samples",
-                                 target_duration=15.0, min_duration=3.0):
+                                 target_duration=20.0, min_seg_duration=0.5):
     """
-    For each unique speaker, find their longest clean segment and extract an
-    audio sample from the vocals-only track for use as a voice cloning reference.
+    For each unique speaker, build a voice cloning reference by concatenating
+    their longest segments up to target_duration seconds total.
 
     Args:
         segments (list[dict]): Segments with 'speaker', 'start', 'end' keys
         vocals_path (str): Path to the vocals-only audio (from Demucs)
         output_dir (str): Directory to write per-speaker WAV files
-        target_duration (float): How many seconds to extract (capped at segment length)
-        min_duration (float): Skip segments shorter than this
+        target_duration (float): Target total seconds to collect per speaker
+        min_seg_duration (float): Skip segments shorter than this
 
     Returns:
-        dict[str, str]: Maps speaker label → path to sample WAV
+        dict[str, str]: Maps speaker label -> path to sample WAV
     """
     os.makedirs(output_dir, exist_ok=True)
 
-    # Find the longest segment per speaker
-    best_per_speaker = {}
+    # Group segments by speaker, sorted by duration descending
+    from collections import defaultdict
+    speaker_segs = defaultdict(list)
     for seg in segments:
         speaker = seg.get("speaker", "SPEAKER_00")
         dur = seg["end"] - seg["start"]
-        if dur < min_duration:
-            continue
-        if speaker not in best_per_speaker or dur > (best_per_speaker[speaker]["end"] - best_per_speaker[speaker]["start"]):
-            best_per_speaker[speaker] = seg
+        if dur >= min_seg_duration:
+            speaker_segs[speaker].append(seg)
+
+    for speaker in speaker_segs:
+        speaker_segs[speaker].sort(key=lambda s: s["end"] - s["start"], reverse=True)
 
     samples = {}
-    for speaker, seg in best_per_speaker.items():
-        dur = min(seg["end"] - seg["start"], target_duration)
-        start_hms = seconds_to_hms(seg["start"])
+    for speaker, segs in speaker_segs.items():
+        clips, total = [], 0.0
+
+        for seg in segs:
+            dur = min(seg["end"] - seg["start"], target_duration - total)
+            if dur <= 0:
+                break
+            clip_path = os.path.join(output_dir, f"_{speaker}_clip{len(clips)}.wav")
+            try:
+                extract_speaker_sample(
+                    vocals_path,
+                    start_time=seconds_to_hms(seg["start"]),
+                    duration=max(1, int(dur)),
+                    output_path=clip_path,
+                )
+                clips.append(clip_path)
+                total += dur
+            except Exception as e:
+                print(f"[!] Could not extract clip for {speaker}: {e}")
+            if total >= target_duration:
+                break
+
+        if not clips:
+            print(f"[!] No usable clips found for {speaker}, skipping.")
+            continue
+
         out_path = os.path.join(output_dir, f"{speaker}.wav")
 
-        print(f"[*] Extracting sample for {speaker}: {start_hms} ({dur:.1f}s) — \"{seg['text'][:50]}\"")
-        try:
-            extract_speaker_sample(
-                vocals_path,
-                start_time=start_hms,
-                duration=int(dur),
-                output_dir=output_dir,
+        if len(clips) == 1:
+            os.replace(clips[0], out_path)
+        else:
+            # Concatenate all clips into one reference file
+            inputs = []
+            for c in clips:
+                inputs += ["-i", c]
+            subprocess.run(
+                ["ffmpeg", "-y"] + inputs +
+                ["-filter_complex", f"concat=n={len(clips)}:v=0:a=1[out]",
+                 "-map", "[out]", out_path],
+                check=True, capture_output=True,
             )
-            # speaker_clip writes to output_dir/original_speaker.wav — rename to speaker-specific path
-            default_path = os.path.join(output_dir, "original_speaker.wav")
-            if os.path.exists(default_path):
-                os.replace(default_path, out_path)
-            samples[speaker] = out_path
-            print(f"[✓] Sample saved: {out_path}")
-        except Exception as e:
-            print(f"[!] Could not extract sample for {speaker}: {e}")
+            for c in clips:
+                if os.path.exists(c):
+                    os.remove(c)
+
+        print(f"[✓] Voice reference for {speaker}: {len(clips)} clip(s), {total:.1f}s → {out_path}")
+        samples[speaker] = out_path
 
     if not samples:
         raise RuntimeError(

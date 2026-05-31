@@ -71,11 +71,15 @@ def generate_segment_audio(text, target_duration, output_path, speaker_wav, lang
     # Time-stretch to match target_duration
     speed_factor = generated_duration / target_duration
 
-    MAX_FACTOR = 2.5
+    MAX_FACTOR = 1.8
     MIN_FACTOR = 0.5
+
     if speed_factor > MAX_FACTOR:
-        print(f"[!] Stretch factor {speed_factor:.2f}x exceeds {MAX_FACTOR}x — clamping.")
-        speed_factor = MAX_FACTOR
+        # Too extreme to stretch cleanly — use natural duration to preserve quality
+        print(f"[!] Stretch factor {speed_factor:.2f}x exceeds {MAX_FACTOR}x — using natural duration.")
+        import shutil
+        shutil.move(raw_path, output_path)
+        return output_path
     elif speed_factor < MIN_FACTOR:
         print(f"[!] Stretch factor {speed_factor:.2f}x below {MIN_FACTOR}x — clamping.")
         speed_factor = MIN_FACTOR
